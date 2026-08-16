@@ -20,6 +20,11 @@ public:
     [[nodiscard]] bool isMarkdown() const;
     [[nodiscard]] bool isHtml() const;
     [[nodiscard]] QString languageName() const;
+    void setTextEncoding(const QString& name, bool byteOrderMark);
+    [[nodiscard]] QString textEncoding() const;
+    [[nodiscard]] bool hasByteOrderMark() const;
+    void setLineEnding(const QString& ending);
+    [[nodiscard]] QString lineEnding() const;
     void setWordWrapEnabled(bool enabled);
     void setWhitespaceVisible(bool visible);
     [[nodiscard]] bool wordWrapEnabled() const;
@@ -43,4 +48,7 @@ private:
     SyntaxHighlighter* highlighter_{};
     LineNumberArea* lineNumberArea_{};
     bool whitespaceVisible_{false};
+    QString textEncoding_{QStringLiteral("UTF-8")};
+    QString lineEnding_{QStringLiteral("\n")};
+    bool byteOrderMark_{false};
 };

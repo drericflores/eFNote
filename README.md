@@ -50,6 +50,17 @@ Linux text and Markdown editor created by Dr. Eric O. Flores.
 - Go to Line, duplicate line, and move-line commands
 - Uppercase and lowercase conversion
 
+## Phase 6 capabilities
+
+- Detection of files changed, removed, or replaced outside eFNote
+- Protected reload decisions when an editor contains unsaved changes
+- UTF-8, UTF-8 BOM, UTF-16LE, UTF-16BE, and ISO-8859-1 handling
+- Preservation of LF, CRLF, and CR line endings
+- Encoding and line-ending information in the status bar
+- Large-file warning and automatic large-Markdown preview suppression
+- Timestamped recovery metadata, corrupted-snapshot cleanup, and explicit
+  restore, discard, or defer choices
+
 The finalized Python 3.0.0 implementation remains in `reference-python/` as the
 behavioral reference during the native conversion.
 
@@ -79,11 +90,10 @@ On Pop!_OS 24.04:
 sudo apt install build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools qt6-svg-dev
 ```
 
-## Next conversion phases
+## Next conversion phase
 
-- External-file change detection, encoding, and line-ending safeguards
-- Large-file protection and improved recovery management
-- Automated Qt tests and Linux release integration
+- Automated Qt tests, Linux desktop integration, documentation, and native
+  C++ release packaging
 
 ## License
 

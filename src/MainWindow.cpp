@@ -9,17 +9,20 @@
 #include <QCloseEvent>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDateTime>
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QCryptographicHash>
 #include <QFontDatabase>
 #include <QIcon>
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QKeySequence>
 #include <QLineEdit>
 #include <QMenu>
@@ -34,8 +37,11 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QStringConverter>
+#include <QStringDecoder>
+#include <QStringEncoder>
 #include <QTabWidget>
 #include <QTextBrowser>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextStream>
@@ -54,10 +60,83 @@ constexpr auto kMarkdownFilter =
 QIcon icon(const char* name) {
     return QIcon(QStringLiteral(":/icons/") + QString::fromLatin1(name) + QStringLiteral(".svg"));
 }
+
+struct DecodedText {
+    QString text;
+    QString encoding{QStringLiteral("UTF-8")};
+    QString lineEnding{QStringLiteral("\n")};
+    bool byteOrderMark{false};
+};
+
+DecodedText decodeText(const QByteArray& data) {
+    DecodedText result;
+    QByteArray payload = data;
+    if (payload.startsWith(QByteArray::fromHex("EFBBBF"))) {
+        result.byteOrderMark = true;
+        payload.remove(0, 3);
+    } else if (payload.startsWith(QByteArray::fromHex("FFFE"))) {
+        result.encoding = QStringLiteral("UTF-16LE");
+        result.byteOrderMark = true;
+        payload.remove(0, 2);
+    } else if (payload.startsWith(QByteArray::fromHex("FEFF"))) {
+        result.encoding = QStringLiteral("UTF-16BE");
+        result.byteOrderMark = true;
+        payload.remove(0, 2);
+    }
+
+    if (result.encoding == QStringLiteral("UTF-16LE")) {
+        QStringDecoder decoder(QStringConverter::Utf16LE);
+        result.text = decoder(payload);
+    } else if (result.encoding == QStringLiteral("UTF-16BE")) {
+        QStringDecoder decoder(QStringConverter::Utf16BE);
+        result.text = decoder(payload);
+    } else {
+        QStringDecoder decoder(QStringConverter::Utf8);
+        result.text = decoder(payload);
+        if (decoder.hasError()) {
+            result.encoding = QStringLiteral("ISO-8859-1");
+            result.byteOrderMark = false;
+            result.text = QString::fromLatin1(payload);
+        }
+    }
+    if (result.text.contains(QStringLiteral("\r\n")))
+        result.lineEnding = QStringLiteral("\r\n");
+    else if (result.text.contains(QLatin1Char('\r')))
+        result.lineEnding = QStringLiteral("\r");
+    result.text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    result.text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    return result;
+}
+
+QByteArray encodeText(QString text, const DocumentEditor* editor) {
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    if (editor->lineEnding() != QStringLiteral("\n"))
+        text.replace(QStringLiteral("\n"), editor->lineEnding());
+
+    if (editor->textEncoding() == QStringLiteral("UTF-16LE")) {
+        QStringEncoder encoder(QStringConverter::Utf16LE);
+        QByteArray output = encoder(text);
+        if (editor->hasByteOrderMark()) output.prepend(QByteArray::fromHex("FFFE"));
+        return output;
+    }
+    if (editor->textEncoding() == QStringLiteral("UTF-16BE")) {
+        QStringEncoder encoder(QStringConverter::Utf16BE);
+        QByteArray output = encoder(text);
+        if (editor->hasByteOrderMark()) output.prepend(QByteArray::fromHex("FEFF"));
+        return output;
+    }
+    if (editor->textEncoding() == QStringLiteral("ISO-8859-1"))
+        return text.toLatin1();
+    QByteArray output = text.toUtf8();
+    if (editor->hasByteOrderMark()) output.prepend(QByteArray::fromHex("EFBBBF"));
+    return output;
+}
 }
 
 MainWindow::MainWindow(const QStringList& initialFiles, QWidget* parent)
-    : QMainWindow(parent), tabs_(new QTabWidget(this)) {
+    : QMainWindow(parent), tabs_(new QTabWidget(this)),
+      fileWatcher_(new QFileSystemWatcher(this)) {
     setWindowTitle(tr("eFNote[*]"));
     resize(1100, 720);
 
@@ -74,6 +153,8 @@ MainWindow::MainWindow(const QStringList& initialFiles, QWidget* parent)
     toggleDarkMode(darkModeAction_->isChecked());
 
     connect(tabs_, &QTabWidget::tabCloseRequested, this, &MainWindow::closeDocument);
+    connect(fileWatcher_, &QFileSystemWatcher::fileChanged,
+            this, &MainWindow::handleExternalFileChange);
     connect(tabs_, &QTabWidget::currentChanged, this, [this] {
         updateCurrentUi();
         updatePreview();
@@ -437,20 +518,26 @@ bool MainWindow::openPath(const QString& path) {
             return true;
         }
     }
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, tr("Open Failed"),
-                             tr("Could not open '%1':\n%2").arg(path, file.errorString()));
+    const QFileInfo info(absolutePath);
+    constexpr qint64 largeFileThreshold = 10LL * 1024LL * 1024LL;
+    if (info.size() > largeFileThreshold) {
+        const auto answer = QMessageBox::warning(
+            this, tr("Large File"),
+            tr("'%1' is %2 MB. Large files may reduce editor performance. Open it?")
+                .arg(info.fileName())
+                .arg(info.size() / (1024.0 * 1024.0), 0, 'f', 1),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) return false;
+    }
+
+    auto* editor = addDocument(absolutePath);
+    editor->setProperty("largeFile", info.size() > largeFileThreshold);
+    if (!loadFile(editor, absolutePath)) {
+        const int index = tabs_->indexOf(editor);
+        tabs_->removeTab(index);
+        editor->deleteLater();
         return false;
     }
-    QTextStream stream(&file);
-    stream.setEncoding(QStringConverter::Utf8);
-    const QString content = stream.readAll();
-
-    auto* editor = addDocument(QFileInfo(path).absoluteFilePath());
-    if (editor->isHtml()) editor->setHtml(content);
-    else editor->setPlainText(content);
-    editor->document()->setModified(false);
     removeRecovery(editor);
     updateTabTitle(editor);
     updatePreview();
@@ -458,23 +545,90 @@ bool MainWindow::openPath(const QString& path) {
     return true;
 }
 
+bool MainWindow::loadFile(DocumentEditor* editor, const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("Open Failed"),
+                             tr("Could not open '%1':\n%2").arg(path, file.errorString()));
+        return false;
+    }
+    const DecodedText decoded = decodeText(file.readAll());
+    editor->setFilePath(QFileInfo(path).absoluteFilePath());
+    editor->setProperty("largeFile", QFileInfo(path).size() > 10LL * 1024LL * 1024LL);
+    editor->setTextEncoding(decoded.encoding, decoded.byteOrderMark);
+    editor->setLineEnding(decoded.lineEnding);
+    if (editor->isHtml()) editor->setHtml(decoded.text);
+    else editor->setPlainText(decoded.text);
+    editor->document()->setModified(false);
+    watchFile(editor->filePath());
+    return true;
+}
+
+void MainWindow::watchFile(const QString& path) {
+    if (!path.isEmpty() && QFileInfo::exists(path) && !fileWatcher_->files().contains(path))
+        fileWatcher_->addPath(path);
+}
+
+void MainWindow::handleExternalFileChange(const QString& path) {
+    if (savingPaths_.contains(path)) return;
+    DocumentEditor* editor = nullptr;
+    for (int index = 0; index < tabs_->count(); ++index) {
+        auto* candidate = qobject_cast<DocumentEditor*>(tabs_->widget(index));
+        if (candidate && candidate->filePath() == path) {
+            editor = candidate;
+            break;
+        }
+    }
+    if (!editor) return;
+    if (!QFileInfo::exists(path)) {
+        QMessageBox::warning(this, tr("File Removed"),
+                             tr("'%1' was removed or renamed outside eFNote.")
+                                 .arg(QFileInfo(path).fileName()));
+        return;
+    }
+    const QString detail = editor->document()->isModified()
+        ? tr("The document also has unsaved changes in eFNote.")
+        : tr("Reload the updated file from disk?");
+    const auto answer = QMessageBox::question(
+        this, tr("File Changed Outside eFNote"),
+        tr("'%1' changed on disk.\n\n%2").arg(QFileInfo(path).fileName(), detail),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer == QMessageBox::Yes) {
+        loadFile(editor, path);
+        updateTabTitle(editor);
+        updatePreview();
+    } else {
+        watchFile(path);
+    }
+}
+
 bool MainWindow::saveDocument(DocumentEditor* editor) {
     if (!editor) return false;
     if (editor->filePath().isEmpty()) return saveDocumentAs(editor);
 
-    QSaveFile file(editor->filePath());
+    const QString path = editor->filePath();
+    savingPaths_.insert(path);
+    fileWatcher_->removePath(path);
+    QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QMessageBox::warning(this, tr("Save Failed"), file.errorString());
+        savingPaths_.remove(path);
+        watchFile(path);
         return false;
     }
-    const QByteArray data = editor->isHtml()
-        ? editor->document()->toHtml().toUtf8()
-        : editor->toPlainText().toUtf8();
+    const QString source = editor->isHtml()
+        ? editor->document()->toHtml() : editor->toPlainText();
+    const QByteArray data = encodeText(source, editor);
     if (file.write(data) != data.size() || !file.commit()) {
         QMessageBox::warning(this, tr("Save Failed"), file.errorString());
+        savingPaths_.remove(path);
+        watchFile(path);
         return false;
     }
+    savingPaths_.remove(path);
+    watchFile(path);
     editor->document()->setModified(false);
+    removeRecovery(editor);
     statusBar()->showMessage(tr("Saved %1").arg(editor->displayName()), 3000);
     return true;
 }
@@ -484,8 +638,9 @@ bool MainWindow::saveDocumentAs(DocumentEditor* editor) {
     QString path = QFileDialog::getSaveFileName(this, tr("Save Document As"),
                                                 editor->filePath(), tr(kMarkdownFilter));
     if (path.isEmpty()) return false;
-    editor->setFilePath(path);
-    addRecentFile(QFileInfo(path).absoluteFilePath());
+    if (!editor->filePath().isEmpty()) fileWatcher_->removePath(editor->filePath());
+    editor->setFilePath(QFileInfo(path).absoluteFilePath());
+    addRecentFile(editor->filePath());
     updateTabTitle(editor);
     updatePreview();
     return saveDocument(editor);
@@ -506,6 +661,8 @@ bool MainWindow::maybeSave(DocumentEditor* editor) {
 void MainWindow::closeDocument(int index) {
     auto* editor = qobject_cast<DocumentEditor*>(tabs_->widget(index));
     if (!maybeSave(editor)) return;
+    if (editor && !editor->filePath().isEmpty())
+        fileWatcher_->removePath(editor->filePath());
     tabs_->removeTab(index);
     removeRecovery(editor);
     editor->deleteLater();
@@ -779,6 +936,10 @@ void MainWindow::autoSaveAll() {
         QJsonObject recovery {
             {QStringLiteral("filePath"), editor->filePath()},
             {QStringLiteral("html"), editor->isHtml()},
+            {QStringLiteral("encoding"), editor->textEncoding()},
+            {QStringLiteral("byteOrderMark"), editor->hasByteOrderMark()},
+            {QStringLiteral("lineEnding"), editor->lineEnding()},
+            {QStringLiteral("savedAt"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
             {QStringLiteral("content"), editor->isHtml()
                 ? editor->document()->toHtml() : editor->toPlainText()}
         };
@@ -800,17 +961,36 @@ int MainWindow::restoreRecoveries() {
     if (files.isEmpty()) return 0;
     const auto answer = QMessageBox::question(
         this, tr("Restore Documents"),
-        tr("eFNote found %1 recovery snapshot(s). Restore them?").arg(files.size()),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-    if (answer != QMessageBox::Yes) return 0;
+        tr("eFNote found %1 recovery snapshot(s).\n\n"
+           "Yes: restore them\nNo: discard them\nCancel: keep them for next startup")
+            .arg(files.size()),
+        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::Yes);
+    if (answer == QMessageBox::Cancel) return 0;
+    if (answer == QMessageBox::No) {
+        for (const auto& name : files) QFile::remove(recoveryDirectory.filePath(name));
+        return 0;
+    }
 
     int restored = 0;
     for (const auto& name : files) {
         QFile file(recoveryDirectory.filePath(name));
         if (!file.open(QIODevice::ReadOnly)) continue;
-        const auto object = QJsonDocument::fromJson(file.readAll()).object();
-        if (!object.contains(QStringLiteral("content"))) continue;
+        QJsonParseError parseError;
+        const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
+        const auto object = document.object();
+        if (parseError.error != QJsonParseError::NoError ||
+            !object.contains(QStringLiteral("content"))) {
+            file.close();
+            QFile::remove(recoveryDirectory.filePath(name));
+            continue;
+        }
         auto* editor = addDocument(object.value(QStringLiteral("filePath")).toString());
+        editor->setTextEncoding(
+            object.value(QStringLiteral("encoding")).toString(QStringLiteral("UTF-8")),
+            object.value(QStringLiteral("byteOrderMark")).toBool(false));
+        editor->setLineEnding(
+            object.value(QStringLiteral("lineEnding")).toString(QStringLiteral("\n")));
+        watchFile(editor->filePath());
         if (object.value(QStringLiteral("html")).toBool())
             editor->setHtml(object.value(QStringLiteral("content")).toString());
         else
@@ -932,9 +1112,15 @@ void MainWindow::updateCurrentUi() {
     int words = 0;
     auto matches = QRegularExpression(QStringLiteral("\\S+")).globalMatch(text);
     while (matches.hasNext()) { matches.next(); ++words; }
-    statusBar()->showMessage(tr("%1 | %2 | Ln %3, Col %4 | %5 lines | %6 words | %7 characters")
+    const QString ending = editor->lineEnding() == QStringLiteral("\r\n")
+        ? QStringLiteral("CRLF")
+        : editor->lineEnding() == QStringLiteral("\r")
+            ? QStringLiteral("CR") : QStringLiteral("LF");
+    statusBar()->showMessage(tr("%1 | %2 | %3 | %4 | Ln %5, Col %6 | %7 lines | %8 words | %9 characters")
         .arg(editor->displayName())
         .arg(editor->languageName())
+        .arg(editor->textEncoding())
+        .arg(ending)
         .arg(cursor.blockNumber() + 1)
         .arg(cursor.positionInBlock() + 1)
         .arg(editor->document()->blockCount())
@@ -945,7 +1131,10 @@ void MainWindow::updateCurrentUi() {
 void MainWindow::updatePreview() {
     auto* editor = currentEditor();
     if (editor && editor->isMarkdown()) {
-        preview_->setMarkdown(editor->toPlainText());
+        if (editor->property("largeFile").toBool())
+            preview_->setPlainText(tr("Markdown preview is disabled for this large file."));
+        else
+            preview_->setMarkdown(editor->toPlainText());
     }
     applyViewMode();
 }

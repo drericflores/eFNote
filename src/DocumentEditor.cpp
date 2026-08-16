@@ -69,6 +69,27 @@ QString DocumentEditor::languageName() const {
     return highlighter_->languageName();
 }
 
+void DocumentEditor::setTextEncoding(const QString& name, bool byteOrderMark) {
+    textEncoding_ = name;
+    byteOrderMark_ = byteOrderMark;
+}
+
+QString DocumentEditor::textEncoding() const {
+    return textEncoding_;
+}
+
+bool DocumentEditor::hasByteOrderMark() const {
+    return byteOrderMark_;
+}
+
+void DocumentEditor::setLineEnding(const QString& ending) {
+    lineEnding_ = ending;
+}
+
+QString DocumentEditor::lineEnding() const {
+    return lineEnding_;
+}
+
 void DocumentEditor::setWordWrapEnabled(bool enabled) {
     setLineWrapMode(enabled ? QTextEdit::WidgetWidth : QTextEdit::NoWrap);
     updateLineNumberArea();

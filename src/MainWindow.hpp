@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QSet>
 #include <QStringList>
 
 class QAction;
 class QCloseEvent;
 class QDockWidget;
 class QMenu;
+class QFileSystemWatcher;
 class QTabWidget;
 class QTextBrowser;
 class QTimer;
@@ -36,6 +38,9 @@ private:
     int restoreSession();
     void addRecentFile(const QString& path);
     void updateRecentFilesMenu();
+    bool loadFile(DocumentEditor* editor, const QString& path);
+    void watchFile(const QString& path);
+    void handleExternalFileChange(const QString& path);
 
     DocumentEditor* addDocument(const QString& path = {});
     DocumentEditor* currentEditor() const;
@@ -76,6 +81,7 @@ private:
     QDockWidget* previewDock_{};
     QTextBrowser* preview_{};
     QMenu* recentFilesMenu_{};
+    QFileSystemWatcher* fileWatcher_{};
 
     QAction* saveAction_{};
     QAction* saveAsAction_{};
@@ -91,4 +97,5 @@ private:
     QTimer* autoSaveTimer_{};
     ViewMode viewMode_{ViewMode::Split};
     QStringList recentFiles_;
+    QSet<QString> savingPaths_;
 };

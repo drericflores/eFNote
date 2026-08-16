@@ -2,26 +2,34 @@ import sys
 import os
 import re # For regular expressions in syntax highlighter
 import subprocess # For opening files/folders cross-platform
+import shutil
 import pathlib # For path manipulation in cross-platform folder opening
 import hashlib # For auto-save path generation
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QFileDialog, QTabWidget,
     QWidget, QVBoxLayout, QToolBar, QStatusBar, QMessageBox, QMenu,
-    QInputDialog, QFontComboBox, QComboBox # Added QFontComboBox, QComboBox
+    QInputDialog, QFontComboBox, QComboBox, QTextBrowser, QDockWidget,
+    QDialog, QDialogButtonBox
 )
 from PySide6.QtGui import (
     QAction, QIcon, QTextCharFormat, QColor, QPalette,
     QSyntaxHighlighter, QTextCursor, QFont, QTextDocument, QKeySequence
 )
 from PySide6.QtCore import Qt, QTimer, QSize, QSaveFile, QRegularExpression, QFileInfo
+from PySide6.QtPrintSupport import QPrinter
+
+APP_NAME = "QuickNote"
+APP_VERSION = "3.0.0"
+APP_ID = "io.github.drericflores.quicknote"
+BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 # Helper function to load icons from the local 'icons' directory with fallback
 def get_icon(name):
-    path = os.path.join("icons", f"{name}.svg")
+    path = BASE_DIR / "icons" / f"{name}.svg"
     # First, try to load from the local path
-    if os.path.exists(path):
-        return QIcon(path)
+    if path.exists():
+        return QIcon(str(path))
     # As a fallback, try to get a themed icon (e.g., from system icon theme)
     pm = QIcon.fromTheme(name)
     if not pm.isNull():
@@ -251,7 +259,7 @@ class NoteTabWidget(QTabWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Quicknote")
+        self.setWindowTitle("QuickNote[*]")
         self.setGeometry(100, 100, 800, 600)
 
         self.dark_mode_enabled = False
@@ -279,11 +287,13 @@ class MainWindow(QMainWindow):
         self.create_actions()
         self.create_menus()
         self.create_toolbar() # Toolbar now created without local styling
+        self.create_markdown_preview()
 
         self.create_status_bar()
 
         # Connect current tab changed signal for status bar updates
         self.tabs.currentChanged.connect(self.update_status_bar_and_format_ui)
+        self.tabs.currentChanged.connect(self.update_markdown_preview)
         # Initial update for format UI
         self.update_format_ui(initial_editor.currentCharFormat())
 
@@ -292,6 +302,10 @@ class MainWindow(QMainWindow):
         """Connects signals from a TextEditor instance for UI updates."""
         editor.cursorPositionChanged.connect(self.update_status_bar)
         editor.currentCharFormatChanged.connect(self.update_format_ui) # New: Connect for rich text UI update
+        editor.textChanged.connect(
+            lambda ed=editor: self.update_markdown_preview()
+            if ed is self.tabs.current_editor() else None
+        )
 
     def create_actions(self):
         """Creates QActions for menu and toolbar using standard key sequences and custom icon loader."""
@@ -315,6 +329,23 @@ class MainWindow(QMainWindow):
         self.save_as_action.setShortcut(QKeySequence.SaveAs)
         self.save_as_action.setStatusTip("Save the current note with a new name")
         self.save_as_action.triggered.connect(self.save_file_as)
+
+        self.close_action = QAction("&Close", self)
+        self.close_action.setShortcut(QKeySequence.Close)
+        self.close_action.setStatusTip("Close the current document")
+        self.close_action.triggered.connect(self.close_current_document)
+
+        self.export_pdf_action = QAction("Export as &PDF...", self)
+        self.export_pdf_action.setStatusTip("Export the rendered document as PDF")
+        self.export_pdf_action.triggered.connect(lambda: self.export_document("pdf"))
+
+        self.export_docx_action = QAction("Export as &Word (.docx)...", self)
+        self.export_docx_action.setStatusTip("Export the document as Microsoft Word")
+        self.export_docx_action.triggered.connect(lambda: self.export_document("docx"))
+
+        self.export_odt_action = QAction("Export as &OpenDocument (.odt)...", self)
+        self.export_odt_action.setStatusTip("Export the document as OpenDocument Text")
+        self.export_odt_action.triggered.connect(lambda: self.export_document("odt"))
 
         self.exit_action = QAction(get_icon("exit"), "E&xit", self)
         self.exit_action.setShortcut(QKeySequence.Quit)
@@ -363,6 +394,12 @@ class MainWindow(QMainWindow):
         self.dark_mode_action.setStatusTip("Toggle dark mode")
         self.dark_mode_action.triggered.connect(self.toggle_dark_mode)
 
+        self.markdown_preview_action = QAction("Markdown &Preview", self, checkable=True)
+        self.markdown_preview_action.setShortcut(QKeySequence("Ctrl+Shift+M"))
+        self.markdown_preview_action.setStatusTip("Show or hide the live Markdown preview")
+        self.markdown_preview_action.setChecked(True)
+        self.markdown_preview_action.triggered.connect(self.toggle_markdown_preview)
+
         # Help Actions
         self.about_action = QAction("&About QuickNote", self)
         self.about_action.setStatusTip("Show information about QuickNote")
@@ -371,6 +408,10 @@ class MainWindow(QMainWindow):
         self.how_to_use_action = QAction("&How to Use", self) # New action for How to Use
         self.how_to_use_action.setStatusTip("Learn how to use QuickNote")
         self.how_to_use_action.triggered.connect(self.show_how_to_use_dialog)
+
+        self.markdown_cheat_sheet_action = QAction("&Markdown Cheat Sheet", self)
+        self.markdown_cheat_sheet_action.setStatusTip("Show Markdown syntax and examples")
+        self.markdown_cheat_sheet_action.triggered.connect(self.show_markdown_cheat_sheet)
 
         # New: Formatting Actions
         self.bold_action = QAction(get_icon("bold"), "Bold", self)
@@ -400,9 +441,14 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("&File")
         file_menu.addAction(self.new_action)
         file_menu.addAction(self.open_action)
+        file_menu.addAction(self.close_action)
         file_menu.addSeparator()
         file_menu.addAction(self.save_action)
         file_menu.addAction(self.save_as_action)
+        export_menu = file_menu.addMenu("&Export")
+        export_menu.addAction(self.export_pdf_action)
+        export_menu.addAction(self.export_docx_action)
+        export_menu.addAction(self.export_odt_action)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 
@@ -424,9 +470,11 @@ class MainWindow(QMainWindow):
 
         view_menu = menu_bar.addMenu("&View")
         view_menu.addAction(self.dark_mode_action)
+        view_menu.addAction(self.markdown_preview_action)
 
         help_menu = menu_bar.addMenu("&Help") # New Help menu
         help_menu.addAction(self.how_to_use_action) # Add How to Use action
+        help_menu.addAction(self.markdown_cheat_sheet_action)
         help_menu.addAction(self.about_action)
 
 
@@ -481,6 +529,58 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Ready")
         # Wiring for status bar updates on tab changes is done in setup_ui
 
+    def create_markdown_preview(self):
+        """Creates the docked, publication-style Markdown preview."""
+        self.markdown_preview = QTextBrowser(self)
+        self.markdown_preview.setOpenExternalLinks(True)
+        self.markdown_preview.document().setDefaultStyleSheet("""
+            body { font-family: sans-serif; font-size: 11pt; line-height: 1.5; }
+            h1 { font-size: 22pt; margin-bottom: 12px; }
+            h2 { font-size: 18pt; border-bottom: 2px solid #d0d7de;
+                 padding-bottom: 6px; margin-top: 22px; }
+            h3 { font-size: 14pt; margin-top: 18px; }
+            blockquote { color: #57606a; border-left: 4px solid #d0d7de;
+                         margin-left: 0; padding-left: 12px; }
+            code { font-family: monospace; background: #eaeef2; }
+            pre { font-family: monospace; background: #eaeef2;
+                  padding: 10px; white-space: pre-wrap; }
+            table { border-collapse: collapse; }
+            th, td { border: 1px solid #d0d7de; padding: 6px; }
+        """)
+
+        self.markdown_preview_dock = QDockWidget("Markdown Preview", self)
+        self.markdown_preview_dock.setObjectName("MarkdownPreviewDock")
+        self.markdown_preview_dock.setWidget(self.markdown_preview)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea,
+                           self.markdown_preview_dock)
+        self.markdown_preview_dock.hide()
+
+    def current_file_is_markdown(self):
+        editor = self.tabs.current_editor()
+        if not editor or not editor.current_file_path:
+            return False
+        return editor.current_file_path.lower().endswith((".md", ".markdown"))
+
+    def toggle_markdown_preview(self, checked):
+        """Shows the preview only when the active document is Markdown."""
+        if checked and not self.current_file_is_markdown():
+            self.status_bar.showMessage(
+                "Markdown preview becomes available when a .md file is active.", 4000
+            )
+        self.update_markdown_preview()
+
+    def update_markdown_preview(self, *_args):
+        """Renders the active Markdown document whenever its source changes."""
+        editor = self.tabs.current_editor()
+        should_show = (
+            self.markdown_preview_action.isChecked()
+            and self.current_file_is_markdown()
+            and editor is not None
+        )
+        self.markdown_preview_dock.setVisible(should_show)
+        if should_show:
+            self.markdown_preview.setMarkdown(editor.toPlainText())
+
     def update_status_bar_and_format_ui(self):
         """Updates both the status bar and the formatting toolbar UI."""
         self.update_status_bar()
@@ -504,7 +604,7 @@ class MainWindow(QMainWindow):
             is_modified = editor.document().isModified()
 
             # Update window title and modified dot
-            self.setWindowTitle(f"Quicknote - {display_name}{'*' if is_modified else ''}")
+            self.setWindowTitle(f"QuickNote - {display_name}[*]")
             self.setWindowModified(is_modified) # For OS-native dirty indicator
 
             cursor = editor.textCursor()
@@ -513,7 +613,7 @@ class MainWindow(QMainWindow):
             status_text = f"{display_name}{' (Modified)' if is_modified else ''} | Line: {line}, Col: {col}"
             self.status_bar.showMessage(status_text)
         else:
-            self.setWindowTitle("Quicknote")
+            self.setWindowTitle("QuickNote[*]")
             self.setWindowModified(False)
             self.status_bar.showMessage("Ready")
 
@@ -522,6 +622,12 @@ class MainWindow(QMainWindow):
         """Creates a new, empty tab."""
         new_editor = self.tabs.add_new_tab()
         self.update_status_bar_and_format_ui() # Update status bar and format UI for the new tab
+
+    def close_current_document(self):
+        """Closes the active document while preserving the existing save prompt."""
+        index = self.tabs.currentIndex()
+        if index >= 0:
+            self.tabs.close_tab(index)
 
     def open_file(self):
         """
@@ -542,26 +648,48 @@ class MainWindow(QMainWindow):
         )
         file_path, _ = QFileDialog.getOpenFileName(self, "Open Note", "", file_filters)
         if file_path:
-            try:
-                is_html = file_path.lower().endswith((".html", ".htm"))
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
+            self.open_file_path(file_path)
 
-                editor = self.tabs.add_new_tab(file_path) # Add tab first to get editor instance
-                if is_html:
-                    editor.setHtml(content)
-                    editor.rich_mode = True
-                else:
-                    editor.setPlainText(content)
-                    editor.rich_mode = False # Ensure plain text mode for code files
-                
-                # Re-apply syntax highlighter based on rich_mode or file_path
-                editor.set_syntax_highlighter(file_path, self.dark_mode_enabled)
+    def open_file_path(self, file_path):
+        """Opens a path supplied by the dialog, command line, or desktop shell."""
+        try:
+            is_html = file_path.lower().endswith((".html", ".htm"))
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
 
-                editor.document().setModified(False) # File is not modified right after opening
-                self.update_status_bar_and_format_ui() # Update status bar and format UI
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Could not open file: {e}\n\nNote: Quicknote primarily supports text-based or HTML files. Formats like .docx are not directly editable.")
+            current = self.tabs.current_editor()
+            reuse_empty_tab = (
+                self.tabs.count() == 1
+                and current is not None
+                and current.current_file_path is None
+                and not current.document().isModified()
+                and not current.toPlainText()
+            )
+            if reuse_empty_tab:
+                editor = current
+                editor.current_file_path = file_path
+                self.tabs.setTabText(self.tabs.currentIndex(), os.path.basename(file_path))
+            else:
+                editor = self.tabs.add_new_tab(file_path)
+            if is_html:
+                editor.setHtml(content)
+                editor.rich_mode = True
+            else:
+                editor.setPlainText(content)
+                editor.rich_mode = False
+
+            editor.set_syntax_highlighter(file_path, self.dark_mode_enabled)
+            editor.document().setModified(False)
+            self.update_status_bar_and_format_ui()
+            self.update_markdown_preview()
+            return True
+        except Exception as error:
+            QMessageBox.warning(
+                self, "Open Failed",
+                f"Could not open '{file_path}':\n{error}\n\n"
+                "QuickNote supports UTF-8 text, Markdown, source code, and HTML files."
+            )
+            return False
 
     def save_file(self, editor=None):
         """
@@ -593,7 +721,7 @@ class MainWindow(QMainWindow):
         try:
             # Determine content to save: HTML if rich_mode or HTML extension, else plain text
             is_html_extension = file_path.lower().endswith((".html", ".htm"))
-            if editor.rich_mode or is_html_extension:
+            if is_html_extension:
                 data = editor.document().toHtml().encode("utf-8")
             else:
                 data = editor.toPlainText().encode("utf-8")
@@ -669,6 +797,109 @@ class MainWindow(QMainWindow):
             self.tabs.setTabText(self.tabs.indexOf(editor), os.path.basename(file_path)) # Update tab name
             return self.save_file(editor=editor) # Now save to the new path (which will use QSaveFile)
         return False
+
+    def export_document(self, output_format):
+        """Exports the active document to PDF, DOCX, or ODT."""
+        editor = self.tabs.current_editor()
+        if not editor:
+            QMessageBox.information(self, "Export", "No document is open.")
+            return
+
+        formats = {
+            "pdf": ("PDF Document (*.pdf)", ".pdf"),
+            "docx": ("Microsoft Word Document (*.docx)", ".docx"),
+            "odt": ("OpenDocument Text (*.odt)", ".odt"),
+        }
+        file_filter, extension = formats[output_format]
+
+        if editor.current_file_path:
+            source_path = pathlib.Path(editor.current_file_path)
+            suggested_path = str(source_path.with_suffix(extension))
+        else:
+            suggested_path = f"QuickNote-Document{extension}"
+
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            f"Export as {output_format.upper()}",
+            suggested_path,
+            file_filter,
+        )
+        if not output_path:
+            return
+        if not output_path.lower().endswith(extension):
+            output_path += extension
+
+        if output_format == "pdf":
+            self.export_pdf(editor, output_path)
+        else:
+            self.export_with_pandoc(editor, output_path, output_format)
+
+    def export_pdf(self, editor, output_path):
+        """Uses Qt to produce PDF without requiring a LaTeX installation."""
+        document = QTextDocument(self)
+        file_path = (editor.current_file_path or "").lower()
+        if file_path.endswith((".md", ".markdown")):
+            document.setMarkdown(editor.toPlainText())
+        elif file_path.endswith((".html", ".htm")) or editor.rich_mode:
+            document.setHtml(editor.document().toHtml())
+        else:
+            document.setPlainText(editor.toPlainText())
+
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(output_path)
+        printer.setDocName(pathlib.Path(output_path).stem)
+
+        try:
+            document.print_(printer)
+        except Exception as error:
+            QMessageBox.critical(self, "PDF Export Failed", str(error))
+            return
+
+        self.status_bar.showMessage(f"Exported {os.path.basename(output_path)}", 5000)
+
+    def export_with_pandoc(self, editor, output_path, output_format):
+        """Uses Pandoc for standards-compliant DOCX and ODT generation."""
+        pandoc = shutil.which("pandoc")
+        if not pandoc:
+            QMessageBox.critical(
+                self,
+                "Pandoc Required",
+                "DOCX and ODT export require Pandoc. Install it with:\n\n"
+                "sudo apt install pandoc",
+            )
+            return
+
+        file_path = (editor.current_file_path or "").lower()
+        if file_path.endswith((".html", ".htm")) or editor.rich_mode:
+            input_format = "html"
+            source = editor.document().toHtml()
+        else:
+            input_format = "gfm" if file_path.endswith((".md", ".markdown")) else "markdown"
+            source = editor.toPlainText()
+
+        title = pathlib.Path(editor.current_file_path).stem if editor.current_file_path else "QuickNote Document"
+        command = [
+            pandoc,
+            "--from", input_format,
+            "--to", output_format,
+            "--standalone",
+            "--metadata", f"title={title}",
+            "--output", output_path,
+        ]
+        result = subprocess.run(
+            command,
+            input=source,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or "Pandoc returned an unknown error."
+            QMessageBox.critical(self, "Export Failed", detail)
+            return
+
+        self.status_bar.showMessage(f"Exported {os.path.basename(output_path)}", 5000)
 
     def toggle_dark_mode(self, checked):
         """Toggles between light and dark themes."""
@@ -851,8 +1082,8 @@ class MainWindow(QMainWindow):
         about_text = (
             "<h2>QuickNote</h2>"
             "<p>By: Dr. Eric O. Flores</p>"
-            "<p>Version: 1</p>"
-            "<p>Date: August 2025</p>"
+            f"<p>Version: {APP_VERSION}</p>"
+            "<p>Date: August 2026</p>"
             "<p>EFRAD Generated Application</p>"
             "<hr>"
             "<h3>Technologies Used:</h3>"
@@ -868,6 +1099,64 @@ class MainWindow(QMainWindow):
             "</ul>"
         )
         QMessageBox.about(self, "About QuickNote", about_text)
+
+    def show_markdown_cheat_sheet(self):
+        """Displays a scrollable reference for commonly used Markdown syntax."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("QuickNote Markdown Cheat Sheet")
+        dialog.resize(820, 680)
+
+        browser = QTextBrowser(dialog)
+        browser.setOpenExternalLinks(True)
+        browser.setHtml("""
+        <h1>Markdown Cheat Sheet</h1>
+        <p>Write the syntax shown in the <b>Markdown source</b> column. The live
+        preview displays the published result immediately.</p>
+        <table cellspacing="0" cellpadding="7" border="1">
+          <tr><th>Purpose</th><th>Markdown source</th><th>Rendered result</th></tr>
+          <tr><td>Heading 1</td><td><code># Heading</code></td><td><h1>Heading</h1></td></tr>
+          <tr><td>Heading 2</td><td><code>## Heading</code></td><td><h2>Heading</h2></td></tr>
+          <tr><td>Bold</td><td><code>**bold text**</code></td><td><b>bold text</b></td></tr>
+          <tr><td>Italic</td><td><code>*italic text*</code></td><td><i>italic text</i></td></tr>
+          <tr><td>Bold italic</td><td><code>***important***</code></td><td><b><i>important</i></b></td></tr>
+          <tr><td>Strikethrough</td><td><code>~~removed~~</code></td><td><s>removed</s></td></tr>
+          <tr><td>Bullet list</td><td><code>- First<br>- Second</code></td><td>• First<br>• Second</td></tr>
+          <tr><td>Numbered list</td><td><code>1. First<br>2. Second</code></td><td>1. First<br>2. Second</td></tr>
+          <tr><td>Task list</td><td><code>- [x] Done<br>- [ ] Pending</code></td><td>☑ Done<br>☐ Pending</td></tr>
+          <tr><td>Link</td><td><code>[OpenAI](https://openai.com)</code></td><td><a href="https://openai.com">OpenAI</a></td></tr>
+          <tr><td>Image</td><td><code>![Description](image.png)</code></td><td>Embedded image</td></tr>
+          <tr><td>Blockquote</td><td><code>&gt; Quoted text</code></td><td><blockquote>Quoted text</blockquote></td></tr>
+          <tr><td>Inline code</td><td><code>`command`</code></td><td><code>command</code></td></tr>
+          <tr><td>Horizontal rule</td><td><code>---</code></td><td><hr></td></tr>
+        </table>
+
+        <h2>Fenced code block</h2>
+        <pre>```python
+print("Hello from QuickNote")
+```</pre>
+
+        <h2>Table</h2>
+        <pre>| Instrument | Status |
+|------------|--------|
+| Fluke 287  | Ready  |
+| OWON DMM   | Review |</pre>
+
+        <h2>Useful controls</h2>
+        <ul>
+          <li><b>Ctrl+Shift+M</b> — show or hide Markdown preview</li>
+          <li><b>Ctrl+S</b> — save the Markdown source</li>
+          <li><b>Ctrl+W</b> — close the current document</li>
+          <li><b>File → Export</b> — create PDF, DOCX, or ODT</li>
+        </ul>
+        """)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(browser)
+        layout.addWidget(buttons)
+        dialog.exec()
 
     def show_how_to_use_dialog(self):
         """Displays a dialog with instructions on how to use QuickNote."""
@@ -1009,43 +1298,14 @@ class MainWindow(QMainWindow):
         # If all tabs are handled or no unsaved changes, accept close event
         event.accept()
 
-# Create dummy icon files (for demonstration, in a real app these would be proper SVG/PNGs)
-# In a real PySide app, you'd use Qt resource files (.qrc) for icons, compiled with pyside6-rcc.
-# For this MVP, we create them on disk.
-def create_dummy_icons():
-    icons_dir = "icons"
-    os.makedirs(icons_dir, exist_ok=True)
-    icon_names = ["new", "open", "save", "save_as", "exit", "undo", "redo", "cut", "copy", "paste", "search",
-                  "bold", "italic", "underline", "strikethrough"] # Added new icons
-    for name in icon_names:
-        # Create a simple SVG icon placeholder with neutral stroke/fill for better contrast
-        # Note: For 'bold', 'italic', 'underline', 'strikethrough', these are very basic placeholders.
-        # Professional icons would be needed for a final product.
-        text_char = ""
-        if name == "bold": text_char = "B"
-        elif name == "italic": text_char = "I"
-        elif name == "underline": text_char = "U"
-        elif name == "strikethrough": text_char = "S"
-        else: text_char = name[0].upper() # Fallback for other icons
-
-        svg_content = f"""
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="2" y="2" width="20" height="20" rx="4" stroke="#9aa0a6" stroke-width="2"/>
-        <text x="12" y="16" font-family="Arial" font-size="12" font-weight="{ 'bold' if name == 'bold' else 'normal' }" text-anchor="middle" fill="#9aa0a6">{text_char}</text>
-        </svg>
-        """
-        with open(os.path.join(icons_dir, f"{name}.svg"), "w") as f:
-            f.write(svg_content)
-
-
 if __name__ == "__main__":
-    create_dummy_icons() # Create dummy icons for the MVP
-
     app = QApplication(sys.argv)
 
     # Set application name and icon (optional but good practice)
-    app.setApplicationName("Quicknote")
-    app.setWindowIcon(get_icon("new")) # Using a dummy icon as app icon
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
+    app.setDesktopFileName(APP_ID)
+    app.setWindowIcon(get_icon("quicknote"))
 
     # Set global font for the application
     # Added font fallback for "Inter"
@@ -1057,5 +1317,9 @@ if __name__ == "__main__":
     window = MainWindow()
     window.show()
 
-    sys.exit(app.exec())
+    for argument in sys.argv[1:]:
+        candidate = pathlib.Path(argument).expanduser()
+        if candidate.is_file():
+            window.open_file_path(str(candidate.resolve()))
 
+    sys.exit(app.exec())

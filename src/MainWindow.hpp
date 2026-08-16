@@ -6,6 +6,7 @@
 class QAction;
 class QCloseEvent;
 class QDockWidget;
+class QMenu;
 class QTabWidget;
 class QTextBrowser;
 class QTimer;
@@ -32,6 +33,9 @@ private:
     void createPreview();
     void restoreSettings();
     void saveSettings();
+    int restoreSession();
+    void addRecentFile(const QString& path);
+    void updateRecentFilesMenu();
 
     DocumentEditor* addDocument(const QString& path = {});
     DocumentEditor* currentEditor() const;
@@ -43,6 +47,12 @@ private:
     void closeDocument(int index);
     void closeCurrentDocument();
     void showSearchReplace();
+    void goToLine();
+    void formatMarkdown(const QString& prefix, const QString& suffix);
+    void prefixMarkdownLines(const QString& prefix);
+    void duplicateCurrentLine();
+    void moveCurrentLine(int direction);
+    void convertSelectionCase(bool upper);
     void exportDocument(const QString& format);
     void exportPdf(DocumentEditor* editor, const QString& outputPath);
     void exportWithPandoc(DocumentEditor* editor, const QString& outputPath,
@@ -65,6 +75,7 @@ private:
     QTabWidget* tabs_{};
     QDockWidget* previewDock_{};
     QTextBrowser* preview_{};
+    QMenu* recentFilesMenu_{};
 
     QAction* saveAction_{};
     QAction* saveAsAction_{};
@@ -79,4 +90,5 @@ private:
     SearchReplaceDialog* searchDialog_{};
     QTimer* autoSaveTimer_{};
     ViewMode viewMode_{ViewMode::Split};
+    QStringList recentFiles_;
 };

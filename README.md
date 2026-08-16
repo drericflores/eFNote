@@ -30,6 +30,26 @@ Linux text and Markdown editor created by Dr. Eric O. Flores.
 - Persistent preview-mode selection
 - Live line, word, and character statistics
 
+## Phase 3 capabilities
+
+- Automatic language recognition
+- Syntax highlighting for C/C++, Python, Markdown, JSON, and HTML
+- Detected language displayed in the status bar
+
+## Phase 4 capabilities
+
+- Line-number gutter and active-line highlighting
+- Matching-bracket assistance and automatic indentation
+- Persistent word-wrap and visible-whitespace controls
+
+## Phase 5 capabilities
+
+- Markdown bold, italic, code, link, heading, quote, and list commands
+- Recent-files menu with missing-file cleanup
+- Restoration of previously open saved documents
+- Go to Line, duplicate line, and move-line commands
+- Uppercase and lowercase conversion
+
 The finalized Python 3.0.0 implementation remains in `reference-python/` as the
 behavioral reference during the native conversion.
 
@@ -61,12 +81,9 @@ sudo apt install build-essential cmake ninja-build qt6-base-dev qt6-base-dev-too
 
 ## Next conversion phases
 
-- Code-focused editor engine and automatic language recognition
-- Markdown formatting commands
-- Full session restoration and recent files
-- Recent files and external-file change detection
-- Syntax highlighting and document statistics
-- Automated Qt tests
+- External-file change detection, encoding, and line-ending safeguards
+- Large-file protection and improved recovery management
+- Automated Qt tests and Linux release integration
 
 ## License
 

@@ -85,6 +85,9 @@ MainWindow::MainWindow(const QStringList& initialFiles, QWidget* parent)
     for (const auto& path : initialFiles) {
         openedAny = openPath(path) || openedAny;
     }
+    if (initialFiles.isEmpty() && restoredCount == 0) {
+        openedAny = restoreSession() > 0;
+    }
     if (!openedAny && restoredCount == 0) {
         newDocument();
     }
@@ -180,6 +183,66 @@ void MainWindow::createActions() {
     connect(findAction, &QAction::triggered, this, &MainWindow::showSearchReplace);
     addAction(findAction);
 
+    auto* goToLineAction = new QAction(tr("&Go to Line…"), this);
+    goToLineAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+G")));
+    connect(goToLineAction, &QAction::triggered, this, &MainWindow::goToLine);
+    addAction(goToLineAction);
+
+    auto* duplicateLineAction = new QAction(tr("&Duplicate Line"), this);
+    duplicateLineAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
+    connect(duplicateLineAction, &QAction::triggered, this, &MainWindow::duplicateCurrentLine);
+    addAction(duplicateLineAction);
+
+    auto* moveLineUpAction = new QAction(tr("Move Line &Up"), this);
+    moveLineUpAction->setShortcut(QKeySequence(QStringLiteral("Alt+Up")));
+    connect(moveLineUpAction, &QAction::triggered, this, [this] { moveCurrentLine(-1); });
+    addAction(moveLineUpAction);
+
+    auto* moveLineDownAction = new QAction(tr("Move Line &Down"), this);
+    moveLineDownAction->setShortcut(QKeySequence(QStringLiteral("Alt+Down")));
+    connect(moveLineDownAction, &QAction::triggered, this, [this] { moveCurrentLine(1); });
+    addAction(moveLineDownAction);
+
+    auto* upperCaseAction = new QAction(tr("Convert to &Uppercase"), this);
+    connect(upperCaseAction, &QAction::triggered, this, [this] { convertSelectionCase(true); });
+    addAction(upperCaseAction);
+
+    auto* lowerCaseAction = new QAction(tr("Convert to &Lowercase"), this);
+    connect(lowerCaseAction, &QAction::triggered, this, [this] { convertSelectionCase(false); });
+    addAction(lowerCaseAction);
+
+    auto markdownAction = [this](const QString& text, const QString& shortcut,
+                                 const QString& prefix, const QString& suffix) {
+        auto* action = new QAction(text, this);
+        if (!shortcut.isEmpty()) action->setShortcut(QKeySequence(shortcut));
+        connect(action, &QAction::triggered, this,
+                [this, prefix, suffix] { formatMarkdown(prefix, suffix); });
+        addAction(action);
+    };
+    markdownAction(tr("Markdown &Bold"), QStringLiteral("Ctrl+B"),
+                   QStringLiteral("**"), QStringLiteral("**"));
+    markdownAction(tr("Markdown &Italic"), QStringLiteral("Ctrl+I"),
+                   QStringLiteral("*"), QStringLiteral("*"));
+    markdownAction(tr("Markdown &Code"), QStringLiteral("Ctrl+Shift+C"),
+                   QStringLiteral("`"), QStringLiteral("`"));
+    markdownAction(tr("Markdown &Link"), QStringLiteral("Ctrl+K"),
+                   QStringLiteral("["), QStringLiteral("](https://)"));
+
+    auto* headingAction = new QAction(tr("Markdown &Heading"), this);
+    connect(headingAction, &QAction::triggered, this,
+            [this] { prefixMarkdownLines(QStringLiteral("## ")); });
+    addAction(headingAction);
+
+    auto* quoteAction = new QAction(tr("Markdown &Quote"), this);
+    connect(quoteAction, &QAction::triggered, this,
+            [this] { prefixMarkdownLines(QStringLiteral("> ")); });
+    addAction(quoteAction);
+
+    auto* listAction = new QAction(tr("Markdown &List"), this);
+    connect(listAction, &QAction::triggered, this,
+            [this] { prefixMarkdownLines(QStringLiteral("- ")); });
+    addAction(listAction);
+
     previewAction_ = new QAction(tr("Markdown &Preview"), this);
     previewAction_->setCheckable(true);
     previewAction_->setChecked(true);
@@ -238,6 +301,8 @@ void MainWindow::createMenus() {
     auto* file = menuBar()->addMenu(tr("&File"));
     file->addAction(findByText(tr("&New")));
     file->addAction(findByText(tr("&Open…")));
+    recentFilesMenu_ = file->addMenu(tr("Open &Recent"));
+    updateRecentFilesMenu();
     file->addAction(closeAction_);
     file->addSeparator();
     file->addAction(saveAction_);
@@ -258,6 +323,24 @@ void MainWindow::createMenus() {
     edit->addAction(findByText(tr("&Paste")));
     edit->addSeparator();
     edit->addAction(findByText(tr("Find and &Replace…")));
+    edit->addAction(findByText(tr("&Go to Line…")));
+    edit->addSeparator();
+    edit->addAction(findByText(tr("&Duplicate Line")));
+    edit->addAction(findByText(tr("Move Line &Up")));
+    edit->addAction(findByText(tr("Move Line &Down")));
+    auto* caseMenu = edit->addMenu(tr("Convert &Case"));
+    caseMenu->addAction(findByText(tr("Convert to &Uppercase")));
+    caseMenu->addAction(findByText(tr("Convert to &Lowercase")));
+
+    auto* markdown = menuBar()->addMenu(tr("&Markdown"));
+    markdown->addAction(findByText(tr("Markdown &Bold")));
+    markdown->addAction(findByText(tr("Markdown &Italic")));
+    markdown->addAction(findByText(tr("Markdown &Code")));
+    markdown->addAction(findByText(tr("Markdown &Link")));
+    markdown->addSeparator();
+    markdown->addAction(findByText(tr("Markdown &Heading")));
+    markdown->addAction(findByText(tr("Markdown &Quote")));
+    markdown->addAction(findByText(tr("Markdown &List")));
 
     auto* view = menuBar()->addMenu(tr("&View"));
     view->addAction(previewAction_);
@@ -346,6 +429,14 @@ void MainWindow::openDialog() {
 }
 
 bool MainWindow::openPath(const QString& path) {
+    const QString absolutePath = QFileInfo(path).absoluteFilePath();
+    for (int index = 0; index < tabs_->count(); ++index) {
+        auto* existing = qobject_cast<DocumentEditor*>(tabs_->widget(index));
+        if (existing && existing->filePath() == absolutePath) {
+            tabs_->setCurrentIndex(index);
+            return true;
+        }
+    }
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QMessageBox::warning(this, tr("Open Failed"),
@@ -363,6 +454,7 @@ bool MainWindow::openPath(const QString& path) {
     removeRecovery(editor);
     updateTabTitle(editor);
     updatePreview();
+    addRecentFile(editor->filePath());
     return true;
 }
 
@@ -393,6 +485,7 @@ bool MainWindow::saveDocumentAs(DocumentEditor* editor) {
                                                 editor->filePath(), tr(kMarkdownFilter));
     if (path.isEmpty()) return false;
     editor->setFilePath(path);
+    addRecentFile(QFileInfo(path).absoluteFilePath());
     updateTabTitle(editor);
     updatePreview();
     return saveDocument(editor);
@@ -429,6 +522,165 @@ void MainWindow::showSearchReplace() {
     searchDialog_->show();
     searchDialog_->raise();
     searchDialog_->activateWindow();
+}
+
+void MainWindow::goToLine() {
+    auto* editor = currentEditor();
+    if (!editor) return;
+    const int maximum = qMax(1, editor->document()->blockCount());
+    bool accepted = false;
+    const int line = QInputDialog::getInt(this, tr("Go to Line"),
+                                          tr("Line number:"), 1, 1, maximum, 1, &accepted);
+    if (!accepted) return;
+    QTextCursor cursor(editor->document()->findBlockByNumber(line - 1));
+    editor->setTextCursor(cursor);
+    editor->setFocus();
+    editor->ensureCursorVisible();
+}
+
+void MainWindow::formatMarkdown(const QString& prefix, const QString& suffix) {
+    auto* editor = currentEditor();
+    if (!editor) return;
+    auto cursor = editor->textCursor();
+    cursor.beginEditBlock();
+    if (cursor.hasSelection()) {
+        const QString selected = cursor.selectedText();
+        cursor.insertText(prefix + selected + suffix);
+    } else {
+        cursor.insertText(prefix + suffix);
+        cursor.movePosition(QTextCursor::Left, QTextCursor::MoveAnchor, suffix.size());
+    }
+    cursor.endEditBlock();
+    editor->setTextCursor(cursor);
+    editor->setFocus();
+}
+
+void MainWindow::prefixMarkdownLines(const QString& prefix) {
+    auto* editor = currentEditor();
+    if (!editor) return;
+    auto cursor = editor->textCursor();
+    int first = cursor.selectionStart();
+    int last = cursor.selectionEnd();
+    cursor.setPosition(first);
+    first = cursor.block().position();
+    cursor.setPosition(last);
+    if (last > first && cursor.atBlockStart()) cursor.movePosition(QTextCursor::PreviousBlock);
+    const int lastBlock = cursor.blockNumber();
+    cursor.setPosition(first);
+    cursor.beginEditBlock();
+    for (;;) {
+        cursor.movePosition(QTextCursor::StartOfBlock);
+        cursor.insertText(prefix);
+        if (cursor.blockNumber() >= lastBlock) break;
+        cursor.movePosition(QTextCursor::NextBlock);
+    }
+    cursor.endEditBlock();
+    editor->setTextCursor(cursor);
+    editor->setFocus();
+}
+
+void MainWindow::duplicateCurrentLine() {
+    auto* editor = currentEditor();
+    if (!editor) return;
+    auto cursor = editor->textCursor();
+    const int column = cursor.positionInBlock();
+    cursor.select(QTextCursor::BlockUnderCursor);
+    const QString line = cursor.selectedText();
+    cursor.movePosition(QTextCursor::EndOfBlock);
+    cursor.beginEditBlock();
+    cursor.insertBlock();
+    cursor.insertText(line);
+    cursor.endEditBlock();
+    cursor.movePosition(QTextCursor::StartOfBlock);
+    cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor,
+                        qMin(column, line.size()));
+    editor->setTextCursor(cursor);
+}
+
+void MainWindow::moveCurrentLine(int direction) {
+    auto* editor = currentEditor();
+    if (!editor || (direction != -1 && direction != 1)) return;
+    const auto original = editor->textCursor();
+    const QTextBlock current = original.block();
+    const QTextBlock adjacent = direction < 0 ? current.previous() : current.next();
+    if (!adjacent.isValid()) return;
+    const int column = original.positionInBlock();
+    const int target = adjacent.blockNumber();
+    const QString first = direction < 0 ? adjacent.text() : current.text();
+    const QString second = direction < 0 ? current.text() : adjacent.text();
+    const QTextBlock startBlock = direction < 0 ? adjacent : current;
+    const QTextBlock endBlock = direction < 0 ? current : adjacent;
+    QTextCursor edit(startBlock);
+    edit.setPosition(startBlock.position());
+    edit.setPosition(endBlock.position() + endBlock.length() - 1, QTextCursor::KeepAnchor);
+    edit.beginEditBlock();
+    edit.insertText(second + QLatin1Char('\n') + first);
+    edit.endEditBlock();
+    QTextCursor moved(editor->document()->findBlockByNumber(target));
+    moved.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor,
+                       qMin(column, moved.block().length() - 1));
+    editor->setTextCursor(moved);
+}
+
+void MainWindow::convertSelectionCase(bool upper) {
+    auto* editor = currentEditor();
+    if (!editor) return;
+    auto cursor = editor->textCursor();
+    if (!cursor.hasSelection()) cursor.select(QTextCursor::WordUnderCursor);
+    if (!cursor.hasSelection()) return;
+    const QString replacement = upper ? cursor.selectedText().toUpper()
+                                      : cursor.selectedText().toLower();
+    cursor.insertText(replacement);
+    editor->setTextCursor(cursor);
+}
+
+void MainWindow::addRecentFile(const QString& path) {
+    if (path.isEmpty()) return;
+    const QString absolutePath = QFileInfo(path).absoluteFilePath();
+    recentFiles_.removeAll(absolutePath);
+    recentFiles_.prepend(absolutePath);
+    while (recentFiles_.size() > 10) recentFiles_.removeLast();
+    QSettings settings;
+    settings.setValue(QStringLiteral("files/recent"), recentFiles_);
+    updateRecentFilesMenu();
+}
+
+void MainWindow::updateRecentFilesMenu() {
+    if (!recentFilesMenu_) return;
+    recentFilesMenu_->clear();
+    recentFiles_.removeIf([](const QString& path) { return !QFileInfo::exists(path); });
+    if (recentFiles_.isEmpty()) {
+        auto* empty = recentFilesMenu_->addAction(tr("(No Recent Files)"));
+        empty->setEnabled(false);
+        return;
+    }
+    for (int index = 0; index < recentFiles_.size(); ++index) {
+        const QString path = recentFiles_.at(index);
+        auto* action = recentFilesMenu_->addAction(
+            tr("&%1 %2").arg(index + 1).arg(QFileInfo(path).fileName()));
+        action->setToolTip(path);
+        connect(action, &QAction::triggered, this, [this, path] { openPath(path); });
+    }
+    recentFilesMenu_->addSeparator();
+    auto* clear = recentFilesMenu_->addAction(tr("&Clear Recent Files"));
+    connect(clear, &QAction::triggered, this, [this] {
+        recentFiles_.clear();
+        QSettings().remove(QStringLiteral("files/recent"));
+        updateRecentFilesMenu();
+    });
+}
+
+int MainWindow::restoreSession() {
+    QSettings settings;
+    const QStringList paths = settings.value(QStringLiteral("session/files")).toStringList();
+    int restored = 0;
+    for (const auto& path : paths) {
+        if (QFileInfo::exists(path) && openPath(path)) ++restored;
+    }
+    const int requestedIndex = settings.value(QStringLiteral("session/current"), 0).toInt();
+    if (tabs_->count() > 0)
+        tabs_->setCurrentIndex(qBound(0, requestedIndex, tabs_->count() - 1));
+    return restored;
 }
 
 void MainWindow::exportDocument(const QString& format) {
@@ -781,6 +1033,8 @@ void MainWindow::restoreSettings() {
     darkModeAction_->setChecked(settings.value(QStringLiteral("view/darkMode"), false).toBool());
     wordWrapAction_->setChecked(settings.value(QStringLiteral("editor/wordWrap"), false).toBool());
     whitespaceAction_->setChecked(settings.value(QStringLiteral("editor/whitespace"), false).toBool());
+    recentFiles_ = settings.value(QStringLiteral("files/recent")).toStringList();
+    updateRecentFilesMenu();
     setViewMode(static_cast<ViewMode>(settings.value(QStringLiteral("view/mode"),
                                                      static_cast<int>(ViewMode::Split)).toInt()));
 }
@@ -794,6 +1048,15 @@ void MainWindow::saveSettings() {
     settings.setValue(QStringLiteral("editor/wordWrap"), wordWrapAction_->isChecked());
     settings.setValue(QStringLiteral("editor/whitespace"), whitespaceAction_->isChecked());
     settings.setValue(QStringLiteral("view/mode"), static_cast<int>(viewMode_));
+    QStringList sessionFiles;
+    for (int index = 0; index < tabs_->count(); ++index) {
+        if (auto* editor = qobject_cast<DocumentEditor*>(tabs_->widget(index));
+            editor && !editor->filePath().isEmpty()) {
+            sessionFiles.append(editor->filePath());
+        }
+    }
+    settings.setValue(QStringLiteral("session/files"), sessionFiles);
+    settings.setValue(QStringLiteral("session/current"), tabs_->currentIndex());
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {

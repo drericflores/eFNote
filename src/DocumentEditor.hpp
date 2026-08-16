@@ -2,6 +2,8 @@
 
 #include <QTextEdit>
 
+class SyntaxHighlighter;
+
 class DocumentEditor final : public QTextEdit {
     Q_OBJECT
 
@@ -13,7 +15,9 @@ public:
     [[nodiscard]] QString displayName() const;
     [[nodiscard]] bool isMarkdown() const;
     [[nodiscard]] bool isHtml() const;
+    [[nodiscard]] QString languageName() const;
 
 private:
     QString filePath_;
+    SyntaxHighlighter* highlighter_{};
 };

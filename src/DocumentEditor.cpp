@@ -1,10 +1,13 @@
 #include "DocumentEditor.hpp"
 
+#include "SyntaxHighlighter.hpp"
+
 #include <QFileInfo>
 #include <QFontDatabase>
 
 DocumentEditor::DocumentEditor(QWidget* parent)
-    : QTextEdit(parent) {
+    : QTextEdit(parent),
+      highlighter_(new SyntaxHighlighter(document())) {
     setAcceptRichText(false);
     setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     setTabStopDistance(fontMetrics().horizontalAdvance(QLatin1Char(' ')) * 4);
@@ -17,6 +20,7 @@ QString DocumentEditor::filePath() const {
 
 void DocumentEditor::setFilePath(const QString& path) {
     filePath_ = path;
+    highlighter_->setFilePath(path);
 }
 
 QString DocumentEditor::displayName() const {
@@ -31,4 +35,8 @@ bool DocumentEditor::isMarkdown() const {
 bool DocumentEditor::isHtml() const {
     const auto suffix = QFileInfo(filePath_).suffix().toLower();
     return suffix == QStringLiteral("html") || suffix == QStringLiteral("htm");
+}
+
+QString DocumentEditor::languageName() const {
+    return highlighter_->languageName();
 }

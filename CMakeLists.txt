@@ -16,6 +16,8 @@ qt_add_executable(efnote
     src/MainWindow.hpp
     src/DocumentEditor.cpp
     src/DocumentEditor.hpp
+    src/SyntaxHighlighter.cpp
+    src/SyntaxHighlighter.hpp
     src/SearchReplaceDialog.cpp
     src/SearchReplaceDialog.hpp
     resources/efnote.qrc

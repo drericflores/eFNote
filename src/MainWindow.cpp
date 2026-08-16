@@ -657,8 +657,9 @@ void MainWindow::updateCurrentUi() {
     int words = 0;
     auto matches = QRegularExpression(QStringLiteral("\\S+")).globalMatch(text);
     while (matches.hasNext()) { matches.next(); ++words; }
-    statusBar()->showMessage(tr("%1 | Ln %2, Col %3 | %4 lines | %5 words | %6 characters")
+    statusBar()->showMessage(tr("%1 | %2 | Ln %3, Col %4 | %5 lines | %6 words | %7 characters")
         .arg(editor->displayName())
+        .arg(editor->languageName())
         .arg(cursor.blockNumber() + 1)
         .arg(cursor.positionInBlock() + 1)
         .arg(editor->document()->blockCount())

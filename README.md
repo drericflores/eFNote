@@ -1,4 +1,4 @@
-# QuickNote 3.0.0
+# QuickNote 4.0.0
 
 QuickNote is a tabbed Linux text and Markdown editor created by Dr. Eric O.
 Flores. It combines straightforward editing with live Markdown rendering,

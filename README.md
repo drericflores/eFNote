@@ -61,6 +61,16 @@ Linux text and Markdown editor created by Dr. Eric O. Flores.
 - Timestamped recovery metadata, corrupted-snapshot cleanup, and explicit
   restore, discard, or defer choices
 
+## Phase 7 capabilities
+
+- Automated Qt editor tests integrated with CTest
+- Linux desktop launcher and MIME associations
+- Scalable application-icon installation
+- AppStream software-center metadata
+- Native CMake installation rules
+- Native C++ DEB and TGZ packaging through CPack
+- Formal release-qualification checklist
+
 The finalized Python 3.0.0 implementation remains in `reference-python/` as the
 behavioral reference during the native conversion.
 
@@ -90,10 +100,30 @@ On Pop!_OS 24.04:
 sudo apt install build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools qt6-svg-dev
 ```
 
-## Next conversion phase
+## Test
 
-- Automated Qt tests, Linux desktop integration, documentation, and native
-  C++ release packaging
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+## Staged installation
+
+```bash
+cmake --install build --prefix "$PWD/stage"
+find stage -type f -print
+```
+
+## Native packages
+
+```bash
+cpack --config build/CPackConfig.cmake -G TGZ
+cpack --config build/CPackConfig.cmake -G DEB
+```
+
+The installed native application does not require Python. Pandoc is recommended
+for DOCX and ODT export.
 
 ## License
 

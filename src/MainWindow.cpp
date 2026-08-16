@@ -193,6 +193,24 @@ void MainWindow::createActions() {
     connect(darkModeAction_, &QAction::toggled, this, &MainWindow::toggleDarkMode);
     addAction(darkModeAction_);
 
+    wordWrapAction_ = new QAction(tr("&Word Wrap"), this);
+    wordWrapAction_->setCheckable(true);
+    connect(wordWrapAction_, &QAction::toggled, this, [this](bool enabled) {
+        for (int i = 0; i < tabs_->count(); ++i)
+            if (auto* editor = qobject_cast<DocumentEditor*>(tabs_->widget(i)))
+                editor->setWordWrapEnabled(enabled);
+    });
+    addAction(wordWrapAction_);
+
+    whitespaceAction_ = new QAction(tr("Show &Whitespace"), this);
+    whitespaceAction_->setCheckable(true);
+    connect(whitespaceAction_, &QAction::toggled, this, [this](bool enabled) {
+        for (int i = 0; i < tabs_->count(); ++i)
+            if (auto* editor = qobject_cast<DocumentEditor*>(tabs_->widget(i)))
+                editor->setWhitespaceVisible(enabled);
+    });
+    addAction(whitespaceAction_);
+
     auto* viewModes = new QActionGroup(this);
     viewModes->setExclusive(true);
     editorOnlyAction_ = new QAction(tr("Editor Only"), viewModes);
@@ -248,6 +266,9 @@ void MainWindow::createMenus() {
     modeMenu->addAction(splitViewAction_);
     modeMenu->addAction(previewOnlyAction_);
     view->addAction(darkModeAction_);
+    view->addSeparator();
+    view->addAction(wordWrapAction_);
+    view->addAction(whitespaceAction_);
 
     auto* help = menuBar()->addMenu(tr("&Help"));
     auto* howToUse = help->addAction(tr("&How to Use eFNote"));
@@ -295,6 +316,8 @@ void MainWindow::createPreview() {
 
 DocumentEditor* MainWindow::addDocument(const QString& path) {
     auto* editor = new DocumentEditor(this);
+    editor->setWordWrapEnabled(wordWrapAction_->isChecked());
+    editor->setWhitespaceVisible(whitespaceAction_->isChecked());
     editor->setFilePath(path);
     editor->setProperty("recoveryId", QUuid::createUuid().toString(QUuid::WithoutBraces));
     const int index = tabs_->addTab(editor, editor->displayName());
@@ -756,6 +779,8 @@ void MainWindow::restoreSettings() {
     restoreState(settings.value(QStringLiteral("window/state")).toByteArray());
     previewAction_->setChecked(settings.value(QStringLiteral("view/preview"), true).toBool());
     darkModeAction_->setChecked(settings.value(QStringLiteral("view/darkMode"), false).toBool());
+    wordWrapAction_->setChecked(settings.value(QStringLiteral("editor/wordWrap"), false).toBool());
+    whitespaceAction_->setChecked(settings.value(QStringLiteral("editor/whitespace"), false).toBool());
     setViewMode(static_cast<ViewMode>(settings.value(QStringLiteral("view/mode"),
                                                      static_cast<int>(ViewMode::Split)).toInt()));
 }
@@ -766,6 +791,8 @@ void MainWindow::saveSettings() {
     settings.setValue(QStringLiteral("window/state"), saveState());
     settings.setValue(QStringLiteral("view/preview"), previewAction_->isChecked());
     settings.setValue(QStringLiteral("view/darkMode"), darkModeAction_->isChecked());
+    settings.setValue(QStringLiteral("editor/wordWrap"), wordWrapAction_->isChecked());
+    settings.setValue(QStringLiteral("editor/whitespace"), whitespaceAction_->isChecked());
     settings.setValue(QStringLiteral("view/mode"), static_cast<int>(viewMode_));
 }
 

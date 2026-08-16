@@ -71,6 +71,8 @@ private:
     QAction* closeAction_{};
     QAction* previewAction_{};
     QAction* darkModeAction_{};
+    QAction* wordWrapAction_{};
+    QAction* whitespaceAction_{};
     QAction* editorOnlyAction_{};
     QAction* splitViewAction_{};
     QAction* previewOnlyAction_{};

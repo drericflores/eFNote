@@ -19,9 +19,9 @@ from PySide6.QtGui import (
 from PySide6.QtCore import Qt, QTimer, QSize, QSaveFile, QRegularExpression, QFileInfo
 from PySide6.QtPrintSupport import QPrinter
 
-APP_NAME = "QuickNote"
+APP_NAME = "eFNote"
 APP_VERSION = "3.0.0"
-APP_ID = "io.github.drericflores.quicknote"
+APP_ID = "io.github.drericflores.efnote"
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 # Helper function to load icons from the local 'icons' directory with fallback
@@ -259,7 +259,7 @@ class NoteTabWidget(QTabWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("QuickNote[*]")
+        self.setWindowTitle("eFNote[*]")
         self.setGeometry(100, 100, 800, 600)
 
         self.dark_mode_enabled = False
@@ -401,12 +401,12 @@ class MainWindow(QMainWindow):
         self.markdown_preview_action.triggered.connect(self.toggle_markdown_preview)
 
         # Help Actions
-        self.about_action = QAction("&About QuickNote", self)
-        self.about_action.setStatusTip("Show information about QuickNote")
+        self.about_action = QAction("&About eFNote", self)
+        self.about_action.setStatusTip("Show information about eFNote")
         self.about_action.triggered.connect(self.show_about_dialog)
 
         self.how_to_use_action = QAction("&How to Use", self) # New action for How to Use
-        self.how_to_use_action.setStatusTip("Learn how to use QuickNote")
+        self.how_to_use_action.setStatusTip("Learn how to use eFNote")
         self.how_to_use_action.triggered.connect(self.show_how_to_use_dialog)
 
         self.markdown_cheat_sheet_action = QAction("&Markdown Cheat Sheet", self)
@@ -604,7 +604,7 @@ class MainWindow(QMainWindow):
             is_modified = editor.document().isModified()
 
             # Update window title and modified dot
-            self.setWindowTitle(f"QuickNote - {display_name}[*]")
+            self.setWindowTitle(f"eFNote - {display_name}[*]")
             self.setWindowModified(is_modified) # For OS-native dirty indicator
 
             cursor = editor.textCursor()
@@ -613,7 +613,7 @@ class MainWindow(QMainWindow):
             status_text = f"{display_name}{' (Modified)' if is_modified else ''} | Line: {line}, Col: {col}"
             self.status_bar.showMessage(status_text)
         else:
-            self.setWindowTitle("QuickNote[*]")
+            self.setWindowTitle("eFNote[*]")
             self.setWindowModified(False)
             self.status_bar.showMessage("Ready")
 
@@ -687,7 +687,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, "Open Failed",
                 f"Could not open '{file_path}':\n{error}\n\n"
-                "QuickNote supports UTF-8 text, Markdown, source code, and HTML files."
+                "eFNote supports UTF-8 text, Markdown, source code, and HTML files."
             )
             return False
 
@@ -816,7 +816,7 @@ class MainWindow(QMainWindow):
             source_path = pathlib.Path(editor.current_file_path)
             suggested_path = str(source_path.with_suffix(extension))
         else:
-            suggested_path = f"QuickNote-Document{extension}"
+            suggested_path = f"eFNote-Document{extension}"
 
         output_path, _ = QFileDialog.getSaveFileName(
             self,
@@ -878,7 +878,7 @@ class MainWindow(QMainWindow):
             input_format = "gfm" if file_path.endswith((".md", ".markdown")) else "markdown"
             source = editor.toPlainText()
 
-        title = pathlib.Path(editor.current_file_path).stem if editor.current_file_path else "QuickNote Document"
+        title = pathlib.Path(editor.current_file_path).stem if editor.current_file_path else "eFNote Document"
         command = [
             pandoc,
             "--from", input_format,
@@ -1078,9 +1078,9 @@ class MainWindow(QMainWindow):
                     self.status_bar.showMessage(f"Replaced '{search_text}' with '{replace_text}'")
 
     def show_about_dialog(self):
-        """Displays the 'About QuickNote' information dialog."""
+        """Displays the 'About eFNote' information dialog."""
         about_text = (
-            "<h2>QuickNote</h2>"
+            "<h2>eFNote</h2>"
             "<p>By: Dr. Eric O. Flores</p>"
             f"<p>Version: {APP_VERSION}</p>"
             "<p>Date: August 2026</p>"
@@ -1098,12 +1098,12 @@ class MainWindow(QMainWindow):
             "<li><code>hashlib</code> module (for auto-save path generation)</li>"
             "</ul>"
         )
-        QMessageBox.about(self, "About QuickNote", about_text)
+        QMessageBox.about(self, "About eFNote", about_text)
 
     def show_markdown_cheat_sheet(self):
         """Displays a scrollable reference for commonly used Markdown syntax."""
         dialog = QDialog(self)
-        dialog.setWindowTitle("QuickNote Markdown Cheat Sheet")
+        dialog.setWindowTitle("eFNote Markdown Cheat Sheet")
         dialog.resize(820, 680)
 
         browser = QTextBrowser(dialog)
@@ -1132,7 +1132,7 @@ class MainWindow(QMainWindow):
 
         <h2>Fenced code block</h2>
         <pre>```python
-print("Hello from QuickNote")
+print("Hello from eFNote")
 ```</pre>
 
         <h2>Table</h2>
@@ -1159,14 +1159,14 @@ print("Hello from QuickNote")
         dialog.exec()
 
     def show_how_to_use_dialog(self):
-        """Displays a dialog with instructions on how to use QuickNote."""
+        """Displays a dialog with instructions on how to use eFNote."""
         how_to_use_text = (
-            "<h2>How to Use QuickNote</h2>"
-            "<p>QuickNote is a simple, tabbed text editor. Here's how to get started:</p>"
+            "<h2>How to Use eFNote</h2>"
+            "<p>eFNote is a simple, tabbed text editor. Here's how to get started:</p>"
             "<h3>File Operations:</h3>"
             "<ul>"
             "<li><b>New (Ctrl+N):</b> Create a new, empty note in a new tab.</li>"
-            "<li><b>Open (Ctrl+O):</b> Open an existing text file. QuickNote supports various programming language files as plain text, and HTML files for rich text.</li>"
+            "<li><b>Open (Ctrl+O):</b> Open an existing text file. eFNote supports various programming language files as plain text, and HTML files for rich text.</li>"
             "<li><b>Save (Ctrl+S):</b> Save the current note to its file. If it's a new note, it will prompt for a file name. Formatting is preserved for .html/.htm files, lost for others.</li>"
             "<li><b>Save As (Ctrl+Shift+S):</b> Save the current note to a new file, prompting for a file name and location. Warns if rich formatting will be lost.</li>"
             "<li><b>Exit (Ctrl+Q):</b> Close the application. You'll be prompted to save any unsaved changes.</li>"
@@ -1189,14 +1189,14 @@ print("Hello from QuickNote")
             "<li><b>Dark Mode (F10):</b> Toggle between light and dark themes for comfortable viewing.</li>"
             "</ul>"
             "<h3>Auto-Save:</h3>"
-            "<p>Your notes are automatically saved to a temporary location every minute. If QuickNote closes unexpectedly, you may be prompted to restore these auto-saved files on next launch. Auto-saved files will preserve rich text formatting if any has been applied.</p>"
+            "<p>Your notes are automatically saved to a temporary location every minute. If eFNote closes unexpectedly, you may be prompted to restore these auto-saved files on next launch. Auto-saved files will preserve rich text formatting if any has been applied.</p>"
         )
-        QMessageBox.information(self, "How to Use QuickNote", how_to_use_text)
+        QMessageBox.information(self, "How to Use eFNote", how_to_use_text)
 
 
     def get_auto_save_path(self, original_file_path):
         """Generates a stable auto-save path based on original file path or a unique ID."""
-        auto_save_dir = os.path.join(os.path.expanduser("~"), ".quicknote_autosave")
+        auto_save_dir = os.path.join(os.path.expanduser("~"), ".efnote_autosave")
         os.makedirs(auto_save_dir, exist_ok=True)
         if original_file_path:
             # Use a hash of the absolute path for a stable temp name
@@ -1235,7 +1235,7 @@ print("Hello from QuickNote")
 
     def load_auto_saved_files(self):
         """Loads auto-saved files when the application starts."""
-        auto_save_dir = os.path.join(os.path.expanduser("~"), ".quicknote_autosave")
+        auto_save_dir = os.path.join(os.path.expanduser("~"), ".efnote_autosave")
         if not os.path.exists(auto_save_dir):
             return
 
@@ -1244,7 +1244,7 @@ print("Hello from QuickNote")
             reply = QMessageBox.question(
                 self,
                 "Restore Auto-saved Files",
-                "Quicknote found auto-saved files from a previous session. Do you want to restore them?",
+                "eFNote found auto-saved files from a previous session. Do you want to restore them?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
@@ -1305,7 +1305,7 @@ if __name__ == "__main__":
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     app.setDesktopFileName(APP_ID)
-    app.setWindowIcon(get_icon("quicknote"))
+    app.setWindowIcon(get_icon("efnote"))
 
     # Set global font for the application
     # Added font fallback for "Inter"

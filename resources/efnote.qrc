@@ -1,0 +1,16 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="efnote.svg">../icons/efnote.svg</file>
+    <file alias="new.svg">../icons/new.svg</file>
+    <file alias="open.svg">../icons/open.svg</file>
+    <file alias="save.svg">../icons/save.svg</file>
+    <file alias="save_as.svg">../icons/save_as.svg</file>
+    <file alias="exit.svg">../icons/exit.svg</file>
+    <file alias="undo.svg">../icons/undo.svg</file>
+    <file alias="redo.svg">../icons/redo.svg</file>
+    <file alias="cut.svg">../icons/cut.svg</file>
+    <file alias="copy.svg">../icons/copy.svg</file>
+    <file alias="paste.svg">../icons/paste.svg</file>
+    <file alias="search.svg">../icons/search.svg</file>
+  </qresource>
+</RCC>

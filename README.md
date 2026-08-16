@@ -1,60 +1,73 @@
-# QuickNote 2.0.0
+# eFNote 4.0.0
 
-QuickNote is a tabbed Linux text and Markdown editor created by Dr. Eric O.
-Flores. It combines straightforward editing with live Markdown rendering,
-recovery, dark mode, source highlighting, and document export.
+eFNote 4 is the native C++20/Qt6 evolution of eFNote 3. It is a tabbed
+Linux text and Markdown editor created by Dr. Eric O. Flores.
 
-## Features
+## Phase 1 capabilities
 
-- UTF-8 text, Markdown, HTML, and source-code editing
-- Live publication-style Markdown preview (`Ctrl+Shift+M`)
-- PDF export through Qt
-- DOCX and ODT export through Pandoc
-- Atomic saves and automatic recovery
-- Tabs, search/replace, dark mode, and Python highlighting
+- Native C++20 and Qt6 Widgets application
+- Multiple movable and closable document tabs
+- New, Open, Save, Save As, Close, and Exit
+- Atomic UTF-8 file saving with `QSaveFile`
+- Protection against losing unsaved documents
+- Live GitHub-flavored Markdown preview
+- Light and dark modes with persistent preferences
+- Find with wraparound
+- Line, column, and character status information
 - Built-in Markdown cheat sheet
-- Command-line and Linux file-manager integration
+- Command-line opening of one or more files
+- Embedded SVG resources
 
-## Run from source
+## Phase 2 capabilities
 
-Requirements are Python 3, PySide6, and Pandoc:
+- Native PDF export through Qt PrintSupport
+- DOCX and ODT export through Pandoc
+- Modeless Find and Replace with next, previous, replace, replace-all, case,
+  and whole-word controls
+- Automatic 60-second recovery snapshots for modified documents
+- Startup recovery after an interruption
+- Editor-only, split, and preview-only Markdown modes
+- Persistent preview-mode selection
+- Live line, word, and character statistics
 
-```bash
-sudo apt install python3-pyside6.qtwidgets python3-pyside6.qtprintsupport pandoc
-python3 quicknote.py
-python3 quicknote.py document.md
-```
+The finalized Python 3.0.0 implementation remains in `reference-python/` as the
+behavioral reference during the native conversion.
 
-## Install for the current user
-
-```bash
-chmod +x scripts/install_local.sh
-./scripts/install_local.sh
-quicknote
-```
-
-This installs beneath `~/.local`, adds the desktop launcher and icon, and does
-not require administrator privileges.
-
-## Build a Debian package
+## Build
 
 ```bash
-chmod +x scripts/build_deb.sh
-./scripts/build_deb.sh
-sudo apt install ./dist/quicknote_2.0.0_all.deb
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/efnote
 ```
 
-## Markdown workflow
+Open a document directly:
 
-Open a `.md` or `.markdown` file to display the live preview. Use
-`View → Markdown Preview` or `Ctrl+Shift+M` to toggle it. The source remains
-plain UTF-8 Markdown. Use `Help → Markdown Cheat Sheet` for syntax examples.
+```bash
+./build/efnote README.md
+```
 
-## Export
+## Requirements
 
-Use `File → Export` to create PDF, Microsoft Word (`.docx`), or OpenDocument
-Text (`.odt`) output. PDF generation is native to Qt. DOCX and ODT use Pandoc.
+- CMake 3.21 or later
+- C++20 compiler
+- Qt 6.4 or later: Widgets, PrintSupport, and SVG
+
+On Pop!_OS 24.04:
+
+```bash
+sudo apt install build-essential cmake ninja-build qt6-base-dev qt6-base-dev-tools qt6-svg-dev
+```
+
+## Next conversion phases
+
+- Code-focused editor engine and automatic language recognition
+- Markdown formatting commands
+- Full session restoration and recent files
+- Recent files and external-file change detection
+- Syntax highlighting and document statistics
+- Automated Qt tests
 
 ## License
 
-GNU General Public License, version 3 or later. See `LICENSE`.
+GNU General Public License version 3 or later. See `LICENSE`.

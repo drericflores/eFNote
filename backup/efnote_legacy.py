@@ -154,7 +154,7 @@ class NoteTabWidget(QTabWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Quicknote")
+        self.setWindowTitle("eFNote")
         self.setGeometry(100, 100, 800, 600)
 
         self.dark_mode_enabled = False
@@ -483,7 +483,7 @@ class MainWindow(QMainWindow):
 
     def auto_save_all_tabs(self):
         """Auto-saves all modified tabs to a temporary directory."""
-        auto_save_dir = os.path.join(os.path.expanduser("~"), ".quicknote_autosave")
+        auto_save_dir = os.path.join(os.path.expanduser("~"), ".efnote_autosave")
         os.makedirs(auto_save_dir, exist_ok=True)
 
         for i in range(self.tabs.count()):
@@ -502,7 +502,7 @@ class MainWindow(QMainWindow):
 
     def load_auto_saved_files(self):
         """Loads auto-saved files when the application starts."""
-        auto_save_dir = os.path.join(os.path.expanduser("~"), ".quicknote_autosave")
+        auto_save_dir = os.path.join(os.path.expanduser("~"), ".efnote_autosave")
         if not os.path.exists(auto_save_dir):
             return
 
@@ -511,7 +511,7 @@ class MainWindow(QMainWindow):
             reply = QMessageBox.question(
                 self,
                 "Restore Auto-saved Files",
-                "Quicknote found auto-saved files from a previous session. Do you want to restore them?",
+                "eFNote found auto-saved files from a previous session. Do you want to restore them?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
@@ -573,7 +573,7 @@ def create_dummy_icons():
             f.write(svg_content)
     # Register the icon path
     QIcon.setThemeSearchPaths(QIcon.themeSearchPaths() + [icons_dir])
-    QIcon.setThemeName("quicknote_icons") # A dummy theme name to make QIcon work
+    QIcon.setThemeName("efnote_icons") # A dummy theme name to make QIcon work
 
 
 if __name__ == "__main__":
@@ -582,7 +582,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     # Set application name and icon (optional but good practice)
-    app.setApplicationName("Quicknote")
+    app.setApplicationName("eFNote")
     app.setWindowIcon(QIcon(":/icons/new.svg")) # Using a dummy icon as app icon
 
     # Set global font for the application
